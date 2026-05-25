@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Setup flyctl
@@ -43,5 +43,15 @@ jobs:
             echo "Fly app already exists"
           fi
 
+      - name: Set runtime secrets on Fly.io
+        run: |
+          flyctl secrets set \
+            SUPABASE_URL="${{ vars.SUPABASE_URL }}" \
+            SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}" \
+            --app ${{ env.FLY_APP_NAME }}
+
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
+        run: |
+          flyctl deploy --remote-only \
+            --build-arg VITE_SUPABASE_URL="${{ vars.SUPABASE_URL }}" \
+            --build-arg VITE_SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"

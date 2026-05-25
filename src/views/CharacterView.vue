@@ -8,7 +8,9 @@
         <span class="char-sub">{{ char.archetype }}</span>
       </div>
       <div style="display:flex;gap:8px">
-        <a :href="`/api/characters/${char.id}/json`" class="btn btn-ghost btn-sm" download>⬇ JSON</a>
+        <button class="btn btn-ghost btn-sm" @click="share">
+          {{ shareCopied ? '✓ Copied' : '🔗 Share' }}
+        </button>
         <button class="btn btn-ghost btn-sm" @click="print">🖨 Print</button>
         <button class="btn btn-primary btn-sm" @click="saveChar">
           {{ store.saved ? '✓ Saved' : 'Save' }}
@@ -384,6 +386,7 @@ import PrintSheet from '../components/PrintSheet.vue'
 
 const route = useRoute()
 const store = useCharacterStore()
+const shareCopied = ref(false)
 
 const tab = ref('core')
 const tabs = [
@@ -436,6 +439,15 @@ async function saveChar() {
 }
 
 function print() { window.print() }
+
+async function share() {
+  let token = store.shareToken
+  if (!token) token = await store.generateShareToken(char.value.id)
+  const url = `${window.location.origin}/share/${token}`
+  await navigator.clipboard.writeText(url)
+  shareCopied.value = true
+  setTimeout(() => { shareCopied.value = false }, 2500)
+}
 
 function addSkill() {
   if (!newSkill.name) return
