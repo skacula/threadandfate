@@ -1,0 +1,47 @@
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  FLY_APP_NAME: thread-and-fate
+
+jobs:
+  deploy:
+    name: Deploy app
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Create Fly app if it doesn't exist
+        run: |
+          if ! flyctl apps list | grep -q "thread-and-fate"; then
+            echo "Creating new Fly app..."
+            flyctl apps create thread-and-fate --org personal
+          else
+            echo "Fly app already exists"
+          fi
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only

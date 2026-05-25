@@ -1,0 +1,187 @@
+{
+  "id": "maldrick-mpllb6gz",
+  "name": "Maldrick",
+  "archetype": "Socialite",
+  "world": "Owner of Castle Duchat",
+  "playerName": "NPC",
+  "meta": {
+    "createdAt": "2026-05-25T19:19:11.747Z",
+    "updatedAt": "2026-05-25T20:26:48.337Z"
+  },
+  "traits": {
+    "body": 2,
+    "mind": 4,
+    "heart": 3,
+    "edge": 3
+  },
+  "ac": "",
+  "initiative": "",
+  "speed": "30 ft.",
+  "hpMax": "",
+  "hpCurrent": "",
+  "hpTemp": "",
+  "hitDice": "",
+  "resilience": 5,
+  "sparks": 3,
+  "inspiration": false,
+  "woundWords": "",
+  "deathSaves": {
+    "successes": 0,
+    "failures": 0
+  },
+  "attacks": [
+    {
+      "name": "",
+      "trait": "",
+      "notes": ""
+    },
+    {
+      "name": "",
+      "trait": "",
+      "notes": ""
+    },
+    {
+      "name": "",
+      "trait": "",
+      "notes": ""
+    },
+    {
+      "name": "",
+      "trait": "",
+      "notes": ""
+    }
+  ],
+  "proficiencies": "",
+  "passivePerception": "",
+  "savingThrows": {
+    "body": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "mind": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "heart": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "edge": {
+      "proficient": false,
+      "bonus": ""
+    }
+  },
+  "skills": {
+    "acrobatics": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "animalHandling": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "arcana": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "athletics": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "deception": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "history": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "insight": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "intimidation": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "investigation": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "medicine": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "nature": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "perception": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "performance": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "persuasion": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "religion": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "sleightOfHand": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "stealth": {
+      "proficient": false,
+      "bonus": ""
+    },
+    "survival": {
+      "proficient": false,
+      "bonus": ""
+    }
+  },
+  "startingSkills": [
+    {
+      "name": "",
+      "trait": ""
+    },
+    {
+      "name": "",
+      "trait": ""
+    },
+    {
+      "name": "",
+      "trait": ""
+    }
+  ],
+  "personality": "",
+  "ideals": "",
+  "bonds": "",
+  "flaws": "",
+  "age": "",
+  "height": "",
+  "weight": "",
+  "eyes": "",
+  "skin": "",
+  "hair": "",
+  "appearance": "",
+  "backstory": "",
+  "allyName": "",
+  "allyNotes": "",
+  "features": "",
+  "acquiredSkills": [],
+  "treasure": {
+    "cp": "",
+    "sp": "",
+    "gp": "",
+    "pp": "",
+    "ep": ""
+  },
+  "treasureNotes": "",
+  "sessionLog": ""
+}

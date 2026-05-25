@@ -1,0 +1,23 @@
+{
+  "name": "thread-and-fate",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite --port 5173\"",
+    "build": "vite build",
+    "start": "node server.js",
+    "preview": "npm run build && node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.7",
+    "@vueuse/core": "^10.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.2.2",
+    "vite": "^5.2.0"
+  }
+}
