@@ -43,5 +43,12 @@ jobs:
             echo "Fly app already exists"
           fi
 
+      - name: Set Supabase secrets on Fly.io
+        run: |
+          flyctl secrets set \
+            SUPABASE_URL="${{ vars.SUPABASE_URL }}" \
+            SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}" \
+            --app ${{ env.FLY_APP_NAME }}
+
       - name: Deploy to Fly.io
         run: flyctl deploy --remote-only
