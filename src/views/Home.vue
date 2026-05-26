@@ -55,8 +55,12 @@
           {{ inviteBusy ? 'Joining…' : 'Join' }}
         </button>
       </form>
-      <div v-if="inviteError"   class="invite-msg error">{{ inviteError }}</div>
-      <div v-if="inviteSuccess" class="invite-msg success">Linked! Your GM can now view and update your characters.</div>
+      <div v-if="inviteError" class="invite-msg error">{{ inviteError }}</div>
+      <div v-if="inviteResult" class="invite-msg success">
+        Joined <strong>{{ inviteResult.campaignName }}</strong>
+        <template v-if="inviteResult.gmEmail"> (GM: {{ inviteResult.gmEmail }})</template>.
+        Your GM can now view and update your characters.
+      </div>
     </div>
   </div>
 </template>
@@ -73,10 +77,10 @@ const auth   = useAuthStore()
 const gm     = useGmStore()
 const router = useRouter()
 
-const inviteInput   = ref('')
-const inviteBusy    = ref(false)
-const inviteError   = ref('')
-const inviteSuccess = ref(false)
+const inviteInput  = ref('')
+const inviteBusy   = ref(false)
+const inviteError  = ref('')
+const inviteResult = ref(null)  // { campaignName, gmEmail }
 
 onMounted(() => store.fetchList())
 
@@ -88,13 +92,12 @@ async function del(id) {
 }
 
 async function acceptCode() {
-  inviteError.value   = ''
-  inviteSuccess.value = false
-  inviteBusy.value    = true
+  inviteError.value  = ''
+  inviteResult.value = null
+  inviteBusy.value   = true
   try {
-    await gm.acceptInvite(inviteInput.value)
-    inviteSuccess.value = true
-    inviteInput.value   = ''
+    inviteResult.value = await gm.acceptInvite(inviteInput.value)
+    inviteInput.value  = ''
   } catch (e) {
     inviteError.value = e.message
   } finally {

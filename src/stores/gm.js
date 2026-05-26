@@ -4,63 +4,85 @@ import { supabase } from '../lib/supabase.js'
 import { useAuthStore } from './auth.js'
 
 export const useGmStore = defineStore('gm', () => {
-  const players      = ref([])  // [{ linkId, id, email, displayName, characters[] }]
-  const pendingCodes = ref([])  // [{ id, invite_code, created_at }]
-  const loading      = ref(false)
-  const error        = ref(null)
+  // campaigns: [{ id, name, createdAt, pendingCodes: [], players: [] }]
+  // player: { memberId, id, email, displayName, characters: [] }
+  const campaigns = ref([])
+  const loading   = ref(false)
+  const error     = ref(null)
 
-  async function fetchPlayers() {
+  async function fetchCampaigns() {
     loading.value = true
-    error.value = null
+    error.value   = null
     try {
       const auth = useAuthStore()
 
-      // All access rows for this GM (both pending and accepted)
-      const { data: links, error: linksErr } = await supabase
-        .from('gm_player_access')
-        .select('id, player_id, invite_code, status, created_at')
+      // Load all campaigns for this GM
+      const { data: camps, error: campsErr } = await supabase
+        .from('campaigns')
+        .select('id, name, created_at')
         .eq('gm_id', auth.user.id)
+        .order('created_at', { ascending: true })
+      if (campsErr) throw campsErr
+
+      if (camps.length === 0) { campaigns.value = []; return }
+
+      // Load all member rows for those campaigns
+      const campIds = camps.map(c => c.id)
+      const { data: members, error: membersErr } = await supabase
+        .from('campaign_members')
+        .select('id, campaign_id, player_id, invite_code, status, created_at')
+        .in('campaign_id', campIds)
         .order('created_at', { ascending: false })
-      if (linksErr) throw linksErr
+      if (membersErr) throw membersErr
 
-      const accepted = links.filter(l => l.status === 'accepted' && l.player_id)
-      const pending  = links.filter(l => l.status === 'pending')
+      const acceptedPlayerIds = [...new Set(
+        members.filter(m => m.status === 'accepted' && m.player_id).map(m => m.player_id)
+      )]
 
-      pendingCodes.value = pending.map(l => ({ id: l.id, code: l.invite_code, createdAt: l.created_at }))
+      // Load profiles + characters for accepted players
+      let profileMap = {}
+      let charsByPlayer = {}
 
-      if (accepted.length === 0) {
-        players.value = []
-        return
+      if (acceptedPlayerIds.length > 0) {
+        const [profilesResult, charsResult] = await Promise.all([
+          supabase.from('profiles').select('id, display_name, email').in('id', acceptedPlayerIds),
+          supabase
+            .from('characters')
+            .select('id, name, archetype, world, user_id, updated_at')
+            .in('user_id', acceptedPlayerIds)
+            .order('updated_at', { ascending: false })
+        ])
+        if (profilesResult.error) throw profilesResult.error
+        if (charsResult.error)    throw charsResult.error
+
+        profileMap    = Object.fromEntries(profilesResult.data.map(p => [p.id, p]))
+        charsByPlayer = charsResult.data.reduce((acc, c) => {
+          ;(acc[c.user_id] ||= []).push({ id: c.id, name: c.name, archetype: c.archetype, world: c.world, updatedAt: c.updated_at })
+          return acc
+        }, {})
       }
 
-      const playerIds = accepted.map(l => l.player_id)
+      // Assemble campaign objects
+      campaigns.value = camps.map(camp => {
+        const campMembers = members.filter(m => m.campaign_id === camp.id)
+        const pending = campMembers
+          .filter(m => m.status === 'pending')
+          .map(m => ({ id: m.id, code: m.invite_code, createdAt: m.created_at }))
 
-      const [profilesResult, charsResult] = await Promise.all([
-        supabase.from('profiles').select('id, display_name, email').in('id', playerIds),
-        supabase
-          .from('characters')
-          .select('id, name, archetype, world, user_id, updated_at')
-          .in('user_id', playerIds)
-          .order('updated_at', { ascending: false })
-      ])
+        const players = campMembers
+          .filter(m => m.status === 'accepted' && m.player_id)
+          .map(m => {
+            const profile = profileMap[m.player_id] || {}
+            return {
+              memberId:    m.id,
+              id:          m.player_id,
+              email:       profile.email,
+              displayName: profile.display_name,
+              characters:  charsByPlayer[m.player_id] || []
+            }
+          })
 
-      if (profilesResult.error) throw profilesResult.error
-      if (charsResult.error)    throw charsResult.error
-
-      const profileMap = Object.fromEntries(profilesResult.data.map(p => [p.id, p]))
-
-      players.value = accepted.map(link => {
-        const profile    = profileMap[link.player_id] || {}
-        const characters = charsResult.data
-          .filter(c => c.user_id === link.player_id)
-          .map(c => ({ id: c.id, name: c.name, archetype: c.archetype, world: c.world, updatedAt: c.updated_at }))
-        return {
-          linkId:      link.id,
-          id:          link.player_id,
-          email:       profile.email,
-          displayName: profile.display_name,
-          characters
-        }
+        return { id: camp.id, name: camp.name, createdAt: camp.created_at, pendingCodes: pending, players }
       })
     } catch (e) {
       error.value = e.message
@@ -69,53 +91,106 @@ export const useGmStore = defineStore('gm', () => {
     }
   }
 
-  async function generateInviteCode() {
+  async function createCampaign(name) {
     const auth = useAuthStore()
     const { data, error: err } = await supabase
-      .from('gm_player_access')
-      .insert({ gm_id: auth.user.id })
+      .from('campaigns')
+      .insert({ gm_id: auth.user.id, name: name.trim() || 'Unnamed Campaign' })
+      .select('id, name, created_at')
+      .single()
+    if (err) throw err
+    campaigns.value.push({ id: data.id, name: data.name, createdAt: data.created_at, pendingCodes: [], players: [] })
+    return data
+  }
+
+  async function renameCampaign(campaignId, name) {
+    const { error: err } = await supabase
+      .from('campaigns')
+      .update({ name: name.trim() || 'Unnamed Campaign' })
+      .eq('id', campaignId)
+    if (err) throw err
+    const camp = campaigns.value.find(c => c.id === campaignId)
+    if (camp) camp.name = name.trim() || 'Unnamed Campaign'
+  }
+
+  async function deleteCampaign(campaignId) {
+    const { error: err } = await supabase.from('campaigns').delete().eq('id', campaignId)
+    if (err) throw err
+    campaigns.value = campaigns.value.filter(c => c.id !== campaignId)
+  }
+
+  async function generateInviteCode(campaignId) {
+    const { data, error: err } = await supabase
+      .from('campaign_members')
+      .insert({ campaign_id: campaignId })
       .select('id, invite_code, created_at')
       .single()
     if (err) throw err
-    pendingCodes.value.unshift({ id: data.id, code: data.invite_code, createdAt: data.created_at })
+    const camp = campaigns.value.find(c => c.id === campaignId)
+    if (camp) camp.pendingCodes.unshift({ id: data.id, code: data.invite_code, createdAt: data.created_at })
     return data.invite_code
   }
 
-  async function revokeInvite(rowId) {
-    const { error: err } = await supabase.from('gm_player_access').delete().eq('id', rowId)
+  async function revokeInvite(memberId) {
+    const { error: err } = await supabase.from('campaign_members').delete().eq('id', memberId)
     if (err) throw err
-    pendingCodes.value = pendingCodes.value.filter(c => c.id !== rowId)
+    for (const camp of campaigns.value) {
+      camp.pendingCodes = camp.pendingCodes.filter(c => c.id !== memberId)
+    }
   }
 
-  async function removePlayer(linkId) {
-    const { error: err } = await supabase.from('gm_player_access').delete().eq('id', linkId)
+  async function removePlayer(memberId) {
+    const { error: err } = await supabase.from('campaign_members').delete().eq('id', memberId)
     if (err) throw err
-    players.value = players.value.filter(p => p.linkId !== linkId)
+    for (const camp of campaigns.value) {
+      camp.players = camp.players.filter(p => p.memberId !== memberId)
+    }
   }
 
+  // Called by the player to accept an invite code.
+  // Returns { campaignName, gmEmail } so the UI can confirm what they joined.
   async function acceptInvite(inviteCode) {
     const auth = useAuthStore()
 
-    const { data: invite, error: findErr } = await supabase
-      .from('gm_player_access')
-      .select('id')
+    const { data: member, error: findErr } = await supabase
+      .from('campaign_members')
+      .select('id, campaign_id')
       .eq('invite_code', inviteCode.trim().toUpperCase())
       .eq('status', 'pending')
       .is('player_id', null)
       .single()
 
-    if (findErr || !invite) throw new Error('Invalid or already-used invite code.')
+    if (findErr || !member) throw new Error('Invalid or already-used invite code.')
 
     const { error: updateErr } = await supabase
-      .from('gm_player_access')
+      .from('campaign_members')
       .update({ player_id: auth.user.id, status: 'accepted' })
-      .eq('id', invite.id)
-
+      .eq('id', member.id)
     if (updateErr) throw updateErr
+
+    // Fetch campaign name for confirmation message
+    const { data: camp } = await supabase
+      .from('campaigns')
+      .select('name, gm_id')
+      .eq('id', member.campaign_id)
+      .single()
+
+    let gmEmail = null
+    if (camp?.gm_id) {
+      const { data: gmProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', camp.gm_id)
+        .single()
+      gmEmail = gmProfile?.email
+    }
+
+    return { campaignName: camp?.name ?? 'Unknown Campaign', gmEmail }
   }
 
   return {
-    players, pendingCodes, loading, error,
-    fetchPlayers, generateInviteCode, revokeInvite, removePlayer, acceptInvite
+    campaigns, loading, error,
+    fetchCampaigns, createCampaign, renameCampaign, deleteCampaign,
+    generateInviteCode, revokeInvite, removePlayer, acceptInvite
   }
 })

@@ -1,5 +1,6 @@
--- Adds user roles (player/game_master) and GM-player invite system.
+-- Adds user roles, named campaigns, and GM-player invite system.
 -- Run this in the Supabase SQL editor after 002_add_auth_and_sharing.sql.
+-- Safe to re-run: all policy and trigger drops are IF EXISTS.
 
 -- ─── Profiles table ─────────────────────────────────────────────────────────
 
@@ -32,78 +33,130 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
--- ─── GM–Player access table ──────────────────────────────────────────────────
+-- ─── Campaigns table ─────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS gm_player_access (
+CREATE TABLE IF NOT EXISTS campaigns (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  gm_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL DEFAULT 'Unnamed Campaign',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_gm_id ON campaigns(gm_id);
+
+-- ─── Campaign members table ───────────────────────────────────────────────────
+-- Each row represents either a pending invite code or an accepted player slot
+-- within a specific campaign.
+
+CREATE TABLE IF NOT EXISTS campaign_members (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  gm_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  campaign_id UUID NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
   player_id   UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   invite_code TEXT UNIQUE NOT NULL DEFAULT upper(encode(gen_random_bytes(4), 'hex')),
   status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted')),
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_gm_player_gm      ON gm_player_access(gm_id);
-CREATE INDEX IF NOT EXISTS idx_gm_player_player  ON gm_player_access(player_id);
-CREATE INDEX IF NOT EXISTS idx_gm_player_code    ON gm_player_access(invite_code);
+CREATE INDEX IF NOT EXISTS idx_cm_campaign  ON campaign_members(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_cm_player    ON campaign_members(player_id);
+CREATE INDEX IF NOT EXISTS idx_cm_code      ON campaign_members(invite_code);
 
 -- ─── RLS: profiles ──────────────────────────────────────────────────────────
 
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- Users can always read and update their own profile.
+DROP POLICY IF EXISTS "profiles_own_read"          ON profiles;
+DROP POLICY IF EXISTS "profiles_own_update"         ON profiles;
+DROP POLICY IF EXISTS "gm_read_player_profiles"     ON profiles;
+DROP POLICY IF EXISTS "player_read_gm_profiles"     ON profiles;
+
 CREATE POLICY "profiles_own_read"   ON profiles FOR SELECT TO authenticated USING (id = auth.uid());
 CREATE POLICY "profiles_own_update" ON profiles FOR UPDATE TO authenticated
   USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
--- GMs can read profiles of their accepted players.
+-- GMs can read profiles of players in their campaigns.
 CREATE POLICY "gm_read_player_profiles" ON profiles FOR SELECT TO authenticated
   USING (
     id IN (
-      SELECT player_id FROM gm_player_access
-      WHERE gm_id = auth.uid() AND status = 'accepted'
+      SELECT cm.player_id
+      FROM campaign_members cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c.gm_id = auth.uid() AND cm.status = 'accepted'
     )
   );
 
--- Players can read profiles of their GMs.
+-- Players can read profiles of GMs whose campaigns they have joined.
 CREATE POLICY "player_read_gm_profiles" ON profiles FOR SELECT TO authenticated
   USING (
     id IN (
-      SELECT gm_id FROM gm_player_access
+      SELECT c.gm_id
+      FROM campaign_members cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE cm.player_id = auth.uid() AND cm.status = 'accepted'
+    )
+  );
+
+-- ─── RLS: campaigns ──────────────────────────────────────────────────────────
+
+ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "gms_manage_own_campaigns"      ON campaigns;
+DROP POLICY IF EXISTS "player_read_joined_campaigns"  ON campaigns;
+
+-- GMs fully manage their own campaigns.
+CREATE POLICY "gms_manage_own_campaigns" ON campaigns FOR ALL TO authenticated
+  USING (gm_id = auth.uid()) WITH CHECK (gm_id = auth.uid());
+
+-- Players can read campaigns they are accepted members of.
+CREATE POLICY "player_read_joined_campaigns" ON campaigns FOR SELECT TO authenticated
+  USING (
+    id IN (
+      SELECT campaign_id FROM campaign_members
       WHERE player_id = auth.uid() AND status = 'accepted'
     )
   );
 
--- ─── RLS: gm_player_access ──────────────────────────────────────────────────
+-- ─── RLS: campaign_members ───────────────────────────────────────────────────
 
-ALTER TABLE gm_player_access ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaign_members ENABLE ROW LEVEL SECURITY;
 
--- GMs fully manage their own invite/access rows.
-CREATE POLICY "gms_manage_own_access" ON gm_player_access FOR ALL TO authenticated
-  USING (gm_id = auth.uid()) WITH CHECK (gm_id = auth.uid());
+DROP POLICY IF EXISTS "gms_manage_campaign_members"  ON campaign_members;
+DROP POLICY IF EXISTS "players_view_own_membership"  ON campaign_members;
+DROP POLICY IF EXISTS "lookup_pending_invites"        ON campaign_members;
+DROP POLICY IF EXISTS "players_accept_invites"        ON campaign_members;
 
--- Players can view links they have been accepted into.
-CREATE POLICY "players_view_own_links" ON gm_player_access FOR SELECT TO authenticated
+-- GMs manage all member rows for their own campaigns.
+CREATE POLICY "gms_manage_campaign_members" ON campaign_members FOR ALL TO authenticated
+  USING  (campaign_id IN (SELECT id FROM campaigns WHERE gm_id = auth.uid()))
+  WITH CHECK (campaign_id IN (SELECT id FROM campaigns WHERE gm_id = auth.uid()));
+
+-- Players can view member rows they are accepted into.
+CREATE POLICY "players_view_own_membership" ON campaign_members FOR SELECT TO authenticated
   USING (player_id = auth.uid());
 
 -- Any authenticated user may look up a pending, unclaimed invite by code.
--- The invite_code acts as a shared secret; knowing it is sufficient authorization.
-CREATE POLICY "lookup_pending_invites" ON gm_player_access FOR SELECT TO authenticated
+-- The invite_code is a shared secret; knowing it is sufficient authorization.
+CREATE POLICY "lookup_pending_invites" ON campaign_members FOR SELECT TO authenticated
   USING (status = 'pending' AND player_id IS NULL);
 
 -- A player may accept a pending invite by writing their own id into player_id.
-CREATE POLICY "players_accept_invites" ON gm_player_access FOR UPDATE TO authenticated
+CREATE POLICY "players_accept_invites" ON campaign_members FOR UPDATE TO authenticated
   USING  (status = 'pending' AND player_id IS NULL)
   WITH CHECK (player_id = auth.uid() AND status = 'accepted');
 
--- ─── RLS: characters (add GM policies) ──────────────────────────────────────
+-- ─── RLS: characters (GM policies via campaigns) ─────────────────────────────
 
--- GMs can read characters belonging to their accepted players.
+DROP POLICY IF EXISTS "gm_read_player_characters"   ON characters;
+DROP POLICY IF EXISTS "gm_update_player_characters" ON characters;
+
+-- GMs can read characters belonging to players in their campaigns.
 CREATE POLICY "gm_read_player_characters" ON characters FOR SELECT TO authenticated
   USING (
     user_id IN (
-      SELECT player_id FROM gm_player_access
-      WHERE gm_id = auth.uid() AND status = 'accepted'
+      SELECT cm.player_id
+      FROM campaign_members cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c.gm_id = auth.uid() AND cm.status = 'accepted'
     )
   );
 
@@ -111,13 +164,17 @@ CREATE POLICY "gm_read_player_characters" ON characters FOR SELECT TO authentica
 CREATE POLICY "gm_update_player_characters" ON characters FOR UPDATE TO authenticated
   USING (
     user_id IN (
-      SELECT player_id FROM gm_player_access
-      WHERE gm_id = auth.uid() AND status = 'accepted'
+      SELECT cm.player_id
+      FROM campaign_members cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c.gm_id = auth.uid() AND cm.status = 'accepted'
     )
   )
   WITH CHECK (
     user_id IN (
-      SELECT player_id FROM gm_player_access
-      WHERE gm_id = auth.uid() AND status = 'accepted'
+      SELECT cm.player_id
+      FROM campaign_members cm
+      JOIN campaigns c ON c.id = cm.campaign_id
+      WHERE c.gm_id = auth.uid() AND cm.status = 'accepted'
     )
   );

@@ -4,85 +4,126 @@
     <div class="gm-header">
       <div>
         <h1 class="gm-title">GM Dashboard</h1>
-        <p class="gm-sub">{{ gm.players.length }} player{{ gm.players.length !== 1 ? 's' : '' }} linked to your table</p>
+        <p class="gm-sub">{{ gm.campaigns.length }} campaign{{ gm.campaigns.length !== 1 ? 's' : '' }}</p>
       </div>
+      <button class="btn btn-primary" @click="showNewCampaign = true">+ New Campaign</button>
     </div>
 
-    <!-- Invite Players panel -->
-    <div class="panel">
-      <div class="panel-head">Invite Players</div>
-      <p class="panel-sub">
-        Generate a one-time code and share it with your player. They enter it on their
-        Character Vault page to link their account to your table.
-      </p>
-
-      <button class="btn btn-primary btn-sm" :disabled="genBusy" @click="generate">
-        {{ genBusy ? 'Generating…' : '+ Generate Invite Code' }}
-      </button>
-      <div v-if="genError" class="msg error" style="margin-top:8px">{{ genError }}</div>
-
-      <!-- Active pending codes -->
-      <div v-if="gm.pendingCodes.length" class="code-list">
-        <div v-for="c in gm.pendingCodes" :key="c.id" class="code-row">
-          <span class="code-chip">{{ c.code }}</span>
-          <span class="code-date">{{ fmt(c.createdAt) }}</span>
-          <button class="btn btn-ghost btn-sm" @click="revoke(c.id)">Revoke</button>
-          <button class="btn btn-ghost btn-sm" @click="copy(c.code)">
-            {{ copied === c.code ? '✓ Copied' : 'Copy' }}
-          </button>
-        </div>
-      </div>
-      <p v-else class="no-codes">No pending invite codes.</p>
+    <!-- New campaign form -->
+    <div v-if="showNewCampaign" class="panel">
+      <div class="panel-head">Create Campaign</div>
+      <form class="inline-form" @submit.prevent="createCampaign">
+        <input v-model="newCampName" placeholder="Campaign name" required autofocus />
+        <button class="btn btn-primary btn-sm" :disabled="createBusy">
+          {{ createBusy ? 'Creating…' : 'Create' }}
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" @click="showNewCampaign = false; newCampName = ''">
+          Cancel
+        </button>
+      </form>
+      <div v-if="createError" class="msg error" style="margin-top:8px">{{ createError }}</div>
     </div>
 
     <!-- Loading / error -->
     <div v-if="gm.loading" class="empty-state">Loading…</div>
     <div v-else-if="gm.error" class="msg error">{{ gm.error }}</div>
 
-    <!-- Players list -->
-    <template v-else>
-      <div v-if="gm.players.length === 0" class="empty-state">
-        <div class="empty-icon">🎲</div>
-        <h2>No players yet</h2>
-        <p>Generate an invite code above and share it with your players.</p>
-      </div>
+    <!-- No campaigns yet -->
+    <div v-else-if="gm.campaigns.length === 0 && !showNewCampaign" class="empty-state">
+      <div class="empty-icon">🎲</div>
+      <h2>No campaigns yet</h2>
+      <p>Create your first campaign to start inviting players.</p>
+      <button class="btn btn-primary" style="margin-top:16px" @click="showNewCampaign = true">+ New Campaign</button>
+    </div>
 
-      <div v-else>
-        <div class="section-head" style="margin-top:32px">Your Players</div>
+    <!-- Campaign sections -->
+    <div v-else>
+      <div v-for="camp in gm.campaigns" :key="camp.id" class="campaign-block">
 
-        <div v-for="player in gm.players" :key="player.id" class="player-block">
-          <div class="player-meta">
-            <div class="player-email">{{ player.email || player.displayName || player.id }}</div>
-            <div v-if="player.displayName && player.email" class="player-name">{{ player.displayName }}</div>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="removePlayer(player.linkId)">
-              Remove
+        <!-- Campaign header row -->
+        <div class="campaign-head">
+          <template v-if="editingId === camp.id">
+            <input class="camp-name-input" v-model="editName" @keydown.enter="saveRename(camp.id)" @keydown.escape="editingId = null" autofocus />
+            <button class="btn btn-primary btn-sm" @click="saveRename(camp.id)">Save</button>
+            <button class="btn btn-ghost btn-sm" @click="editingId = null">Cancel</button>
+          </template>
+          <template v-else>
+            <span class="camp-name">{{ camp.name }}</span>
+            <button class="btn btn-ghost btn-sm icon-btn" title="Rename" @click="startEdit(camp)">✏</button>
+            <span class="camp-since">since {{ fmt(camp.createdAt) }}</span>
+            <button class="btn btn-danger btn-sm" style="margin-left:auto" @click="deleteCampaign(camp)">
+              Delete Campaign
+            </button>
+          </template>
+        </div>
+
+        <!-- Invite section -->
+        <div class="invite-panel">
+          <div class="invite-panel-head">
+            <span>Invite Codes</span>
+            <button class="btn btn-ghost btn-sm" :disabled="genBusy === camp.id" @click="generate(camp.id)">
+              {{ genBusy === camp.id ? 'Generating…' : '+ Generate Code' }}
             </button>
           </div>
 
-          <!-- Player's characters -->
-          <div v-if="player.characters.length === 0" class="no-chars">
-            This player has no characters yet.
+          <div v-if="camp.pendingCodes.length === 0" class="no-items">No active codes.</div>
+          <div v-else class="code-list">
+            <div v-for="c in camp.pendingCodes" :key="c.id" class="code-row">
+              <span class="code-chip">{{ c.code }}</span>
+              <span class="code-date">{{ fmt(c.createdAt) }}</span>
+              <button class="btn btn-ghost btn-sm" @click="copyCode(c.code)">
+                {{ copied === c.code ? '✓ Copied' : 'Copy' }}
+              </button>
+              <button class="btn btn-ghost btn-sm" @click="revokeCode(c.id)">Revoke</button>
+            </div>
           </div>
-          <div v-else class="char-grid">
-            <div
-              v-for="c in player.characters"
-              :key="c.id"
-              class="char-card"
-              @click="go(c.id)"
-            >
-              <div class="char-card-bg"></div>
-              <div class="char-card-content">
-                <div class="gm-badge">GM Edit</div>
-                <div class="char-name">{{ c.name || 'Unnamed' }}</div>
-                <div class="char-arch">{{ c.archetype || '—' }}</div>
-                <div class="char-world">{{ c.world || '' }}</div>
-                <div class="char-date">{{ fmt(c.updatedAt) }}</div>
+        </div>
+
+        <!-- Players section -->
+        <div class="players-head">
+          Players ({{ camp.players.length }})
+        </div>
+
+        <div v-if="camp.players.length === 0" class="no-items" style="margin-bottom:16px">
+          No players yet — share an invite code above.
+        </div>
+
+        <div v-else>
+          <div v-for="player in camp.players" :key="player.id" class="player-block">
+            <div class="player-meta">
+              <div>
+                <div class="player-email">{{ player.email || player.id }}</div>
+                <div v-if="player.displayName" class="player-name">{{ player.displayName }}</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto" @click="removePlayer(player.memberId, camp.id)">
+                Remove
+              </button>
+            </div>
+
+            <div v-if="player.characters.length === 0" class="no-items" style="margin-bottom:12px">
+              No characters yet.
+            </div>
+            <div v-else class="char-grid">
+              <div
+                v-for="c in player.characters"
+                :key="c.id"
+                class="char-card"
+                @click="go(c.id)"
+              >
+                <div class="char-card-bg"></div>
+                <div class="char-card-content">
+                  <div class="gm-badge">GM Edit</div>
+                  <div class="char-name">{{ c.name || 'Unnamed' }}</div>
+                  <div class="char-arch">{{ c.archetype || '—' }}</div>
+                  <div class="char-world">{{ c.world || '' }}</div>
+                  <div class="char-date">{{ fmt(c.updatedAt) }}</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -94,37 +135,72 @@ import { useGmStore } from '../stores/gm.js'
 const gm     = useGmStore()
 const router = useRouter()
 
-const genBusy = ref(false)
-const genError = ref('')
+const showNewCampaign = ref(false)
+const newCampName     = ref('')
+const createBusy      = ref(false)
+const createError     = ref('')
+
+const editingId = ref(null)
+const editName  = ref('')
+
+const genBusy = ref(null)
 const copied  = ref('')
 
-onMounted(() => gm.fetchPlayers())
+onMounted(() => gm.fetchCampaigns())
 
 function go(id) { router.push(`/character/${id}`) }
 
-async function generate() {
-  genError.value = ''
-  genBusy.value  = true
+async function createCampaign() {
+  createError.value = ''
+  createBusy.value  = true
   try {
-    await gm.generateInviteCode()
+    await gm.createCampaign(newCampName.value)
+    showNewCampaign.value = false
+    newCampName.value     = ''
   } catch (e) {
-    genError.value = e.message
+    createError.value = e.message
   } finally {
-    genBusy.value = false
+    createBusy.value = false
   }
 }
 
-async function revoke(id) {
+function startEdit(camp) {
+  editingId.value = camp.id
+  editName.value  = camp.name
+}
+
+async function saveRename(campId) {
+  if (!editName.value.trim()) return
+  await gm.renameCampaign(campId, editName.value)
+  editingId.value = null
+}
+
+async function deleteCampaign(camp) {
+  if (!confirm(`Delete campaign "${camp.name}"? All invite codes and player links will be removed. Characters are not deleted.`)) return
+  await gm.deleteCampaign(camp.id)
+}
+
+async function generate(campId) {
+  genBusy.value = campId
+  try {
+    await gm.generateInviteCode(campId)
+  } finally {
+    genBusy.value = null
+  }
+}
+
+async function revokeCode(memberId) {
   if (!confirm('Revoke this invite code?')) return
-  await gm.revokeInvite(id)
+  await gm.revokeInvite(memberId)
 }
 
-async function removePlayer(linkId) {
-  if (!confirm('Remove this player from your table? They will no longer be linked to you.')) return
-  await gm.removePlayer(linkId)
+async function removePlayer(memberId, campId) {
+  const camp = gm.campaigns.find(c => c.id === campId)
+  if (!confirm(`Remove this player from "${camp?.name ?? 'the campaign'}"?`)) return
+  await gm.removePlayer(memberId)
 }
 
-async function copy(code) {
+async function copyCode(code) {
   await navigator.clipboard.writeText(code)
   copied.value = code
   setTimeout(() => { copied.value = '' }, 2000)
@@ -132,7 +208,7 @@ async function copy(code) {
 
 function fmt(iso) {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' })
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 </script>
 
@@ -144,54 +220,64 @@ function fmt(iso) {
 .gm-title { font-family: var(--font-title); font-size: 2rem; color: var(--acc); letter-spacing: 0.04em; }
 .gm-sub   { color: var(--muted); font-size: 1rem; margin-top: 4px; }
 
-/* Panel */
-.panel {
-  background: var(--bg2);
+/* New campaign panel */
+.panel       { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px 24px; margin-bottom: 28px; }
+.panel-head  { font-family: var(--font-title); font-size: 1rem; color: var(--white); letter-spacing: 0.04em; margin-bottom: 12px; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.inline-form input { flex: 1; min-width: 180px; }
+
+/* Campaign blocks */
+.campaign-block {
+  margin-bottom: 40px;
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  padding: 20px 24px;
-  margin-bottom: 32px;
+  overflow: hidden;
 }
-.panel-head {
-  font-family: var(--font-title);
-  font-size: 1rem;
-  color: var(--white);
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
-}
-.panel-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 16px; }
 
-/* Invite code list */
-.code-list  { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
-.code-row   { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.code-chip  {
-  font-family: var(--font-mono); font-size: 1rem; letter-spacing: 0.18em;
+.campaign-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.camp-name       { font-family: var(--font-title); font-size: 1.1rem; color: var(--white); letter-spacing: 0.04em; }
+.camp-name-input { font-family: var(--font-title); font-size: 1rem; flex: 1; min-width: 160px; }
+.camp-since      { font-size: 0.75rem; color: var(--faint); font-family: var(--font-mono); }
+.icon-btn        { font-size: 0.8rem; padding: 3px 8px; }
+
+/* Invite section inside campaign */
+.invite-panel      { padding: 14px 20px; background: color-mix(in srgb, var(--acc) 4%, transparent); border-bottom: 1px solid var(--border); }
+.invite-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 0.85rem; color: var(--muted); }
+
+.code-list { display: flex; flex-direction: column; gap: 6px; }
+.code-row  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.code-chip {
+  font-family: var(--font-mono); font-size: 0.95rem; letter-spacing: 0.18em;
   color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent);
-  border-radius: var(--r); padding: 4px 12px;
+  border-radius: var(--r); padding: 3px 10px;
 }
-.code-date  { font-size: 0.75rem; color: var(--faint); font-family: var(--font-mono); flex: 1; }
-.no-codes   { font-size: 0.85rem; color: var(--muted); margin-top: 12px; }
+.code-date { font-size: 0.72rem; color: var(--faint); font-family: var(--font-mono); flex: 1; }
+.no-items  { font-size: 0.82rem; color: var(--muted); padding: 4px 0; }
 
-/* Player blocks */
-.player-block { margin-bottom: 32px; }
+/* Players inside campaign */
+.players-head { padding: 10px 20px 4px; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.player-block { padding: 0 20px 16px; }
 .player-meta  {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 12px;
-  padding: 10px 14px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
+  margin-bottom: 10px; padding: 8px 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
 }
-.player-email { font-family: var(--font-mono); font-size: 0.85rem; color: var(--white); }
-.player-name  { font-size: 0.8rem; color: var(--muted); }
-.no-chars     { font-size: 0.85rem; color: var(--muted); padding: 12px 0; }
+.player-email { font-family: var(--font-mono); font-size: 0.82rem; color: var(--white); }
+.player-name  { font-size: 0.75rem; color: var(--muted); }
 
-/* Character cards (same style as Home) */
+/* Character cards */
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
 }
 .char-card {
   position: relative; border-radius: var(--r-lg);
@@ -207,26 +293,23 @@ function fmt(iso) {
   opacity: 0; transition: opacity 0.2s;
 }
 .char-card:hover .char-card-bg { opacity: 1; }
-.char-card-content { position: relative; padding: 18px 20px; }
+.char-card-content { position: relative; padding: 16px 18px; }
 .gm-badge {
   display: inline-block;
-  font-size: 0.65rem; font-family: var(--font-title); letter-spacing: 0.08em;
+  font-size: 0.62rem; font-family: var(--font-title); letter-spacing: 0.08em;
   color: var(--acc); background: color-mix(in srgb, var(--acc) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
-  border-radius: 20px; padding: 2px 8px; margin-bottom: 8px;
+  border-radius: 20px; padding: 2px 7px; margin-bottom: 7px;
 }
-.char-name {
-  font-family: var(--font-title); font-size: 1.1rem;
-  color: var(--white); letter-spacing: 0.04em; margin-bottom: 3px;
-}
-.char-arch  { font-size: 0.88rem; color: var(--acc); font-style: italic; margin-bottom: 2px; }
-.char-world { font-size: 0.78rem; color: var(--muted); margin-bottom: 10px; }
-.char-date  { font-size: 0.72rem; color: var(--faint); font-family: var(--font-mono); }
+.char-name  { font-family: var(--font-title); font-size: 1rem; color: var(--white); letter-spacing: 0.04em; margin-bottom: 3px; }
+.char-arch  { font-size: 0.85rem; color: var(--acc); font-style: italic; margin-bottom: 2px; }
+.char-world { font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; }
+.char-date  { font-size: 0.7rem; color: var(--faint); font-family: var(--font-mono); }
 
-/* Utility */
-.empty-state { text-align:center; padding:60px 20px; color:var(--muted); }
-.empty-icon  { font-size:3rem; margin-bottom:16px; opacity:0.3; }
-.empty-state h2 { font-family:var(--font-title); font-size:1.4rem; color:var(--faint); margin-bottom:8px; }
-.msg         { font-size:0.85rem; padding:8px 12px; border-radius:var(--r); }
-.msg.error   { color:var(--fail-fg); background:color-mix(in srgb, var(--fail-fg) 10%, transparent); }
+/* Misc */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty-icon  { font-size: 3rem; margin-bottom: 16px; opacity: 0.3; }
+.empty-state h2 { font-family: var(--font-title); font-size: 1.4rem; color: var(--faint); margin-bottom: 8px; }
+.msg         { font-size: 0.85rem; padding: 8px 12px; border-radius: var(--r); }
+.msg.error   { color: var(--fail-fg); background: color-mix(in srgb, var(--fail-fg) 10%, transparent); }
 </style>
