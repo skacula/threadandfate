@@ -32,7 +32,10 @@
 
     <!-- ── Loading / error ────────────────────────────────── -->
     <div v-if="store.loading" class="page" style="text-align:center;padding:60px;color:var(--muted)">Loading…</div>
-    <div v-else-if="!char" class="page" style="text-align:center;padding:60px;color:var(--fail-fg)">Character not found.</div>
+    <div v-else-if="!char" class="page" style="text-align:center;padding:60px;color:var(--fail-fg)">
+      Character not found.
+      <div v-if="store.error" style="margin-top:10px;font-size:0.78rem;color:var(--muted);font-family:var(--font-mono);white-space:pre-wrap">{{ store.error }}</div>
+    </div>
 
     <template v-else>
       <!-- ════════════════════════════════════════════════════ -->

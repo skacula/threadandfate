@@ -41,6 +41,8 @@ export const useCharacterStore = defineStore('characters', () => {
 
   async function fetchOne(id) {
     loading.value = true
+    error.value   = null
+    current.value = null
     try {
       const { data, error: err } = await supabase
         .from('characters')
@@ -48,6 +50,7 @@ export const useCharacterStore = defineStore('characters', () => {
         .eq('id', id)
         .single()
       if (err) throw err
+      if (!data?.data) throw new Error('Character data is empty or missing.')
       current.value          = data.data
       shareToken.value       = data.share_token
       characterOwnerId.value = data.user_id

@@ -9,12 +9,13 @@ async function bootstrap() {
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
-  app.use(router)
 
-  // Restore session before the router guard runs
+  // Init auth BEFORE attaching the router so the navigation guard
+  // sees the restored session on the very first navigation.
   const auth = useAuthStore()
   await auth.init()
 
+  app.use(router)
   app.mount('#app')
 }
 
