@@ -1,5 +1,11 @@
 <template>
   <div class="page">
+    <!-- GM redirect banner -->
+    <div v-if="auth.isGM" class="gm-redirect">
+      <span>You are logged in as a <strong>Game Master</strong>.</span>
+      <router-link to="/gm" class="btn btn-primary btn-sm">Go to GM Dashboard →</router-link>
+    </div>
+
     <div class="home-header">
       <div>
         <h1 class="home-title">Character Vault</h1>
@@ -31,16 +37,46 @@
         </div>
       </div>
     </div>
+
+    <!-- GM Invite acceptance for players -->
+    <div class="invite-section">
+      <div class="invite-header">
+        <span class="invite-title">Join a Game Master</span>
+        <span class="invite-sub">Enter an invite code from your GM to link your characters.</span>
+      </div>
+      <form class="invite-form" @submit.prevent="acceptCode">
+        <input
+          v-model="inviteInput"
+          placeholder="Enter invite code (e.g. AB3F2C1D)"
+          maxlength="8"
+          style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:0.12em"
+        />
+        <button class="btn btn-primary btn-sm" :disabled="inviteBusy || !inviteInput.trim()">
+          {{ inviteBusy ? 'Joining…' : 'Join' }}
+        </button>
+      </form>
+      <div v-if="inviteError"   class="invite-msg error">{{ inviteError }}</div>
+      <div v-if="inviteSuccess" class="invite-msg success">Linked! Your GM can now view and update your characters.</div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCharacterStore } from '../stores/character.js'
+import { useAuthStore } from '../stores/auth.js'
+import { useGmStore } from '../stores/gm.js'
 
-const store = useCharacterStore()
+const store  = useCharacterStore()
+const auth   = useAuthStore()
+const gm     = useGmStore()
 const router = useRouter()
+
+const inviteInput   = ref('')
+const inviteBusy    = ref(false)
+const inviteError   = ref('')
+const inviteSuccess = ref(false)
 
 onMounted(() => store.fetchList())
 
@@ -49,6 +85,21 @@ function go(id) { router.push(`/character/${id}`) }
 async function del(id) {
   if (!confirm('Delete this character? This cannot be undone.')) return
   await store.remove(id)
+}
+
+async function acceptCode() {
+  inviteError.value   = ''
+  inviteSuccess.value = false
+  inviteBusy.value    = true
+  try {
+    await gm.acceptInvite(inviteInput.value)
+    inviteSuccess.value = true
+    inviteInput.value   = ''
+  } catch (e) {
+    inviteError.value = e.message
+  } finally {
+    inviteBusy.value = false
+  }
 }
 
 function fmt(iso) {
@@ -64,6 +115,19 @@ function fmt(iso) {
 }
 .home-title { font-family: var(--font-title); font-size: 2rem; color: var(--acc); letter-spacing: 0.04em; }
 .home-sub { color: var(--muted); font-size: 1rem; margin-top: 4px; }
+
+/* GM redirect banner */
+.gm-redirect {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  background: color-mix(in srgb, var(--acc) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent);
+  border-radius: var(--r);
+  padding: 12px 16px;
+  margin-bottom: 24px;
+  font-size: 0.9rem;
+  color: var(--faint);
+  flex-wrap: wrap;
+}
 
 .empty-state {
   text-align: center; padding: 80px 20px; color: var(--muted);
@@ -99,4 +163,28 @@ function fmt(iso) {
 .char-world { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; }
 .char-footer { display: flex; align-items: center; justify-content: space-between; }
 .char-date { font-size: 0.75rem; color: var(--faint); font-family: var(--font-mono); }
+
+/* Invite section */
+.invite-section {
+  margin-top: 48px;
+  border-top: 1px solid var(--border);
+  padding-top: 28px;
+}
+.invite-header { margin-bottom: 14px; }
+.invite-title {
+  display: block;
+  font-family: var(--font-title);
+  font-size: 1rem;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.invite-sub { font-size: 0.85rem; color: var(--muted); }
+.invite-form {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.invite-form input { flex: 1; min-width: 180px; max-width: 260px; }
+.invite-msg { margin-top: 8px; font-size: 0.85rem; padding: 8px 12px; border-radius: var(--r); }
+.invite-msg.error   { color: var(--fail-fg); background: color-mix(in srgb, var(--fail-fg) 10%, transparent); }
+.invite-msg.success { color: var(--succ-fg); background: color-mix(in srgb, var(--succ-fg) 10%, transparent); }
 </style>

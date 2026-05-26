@@ -2,13 +2,16 @@
   <div>
     <!-- ── Toolbar (no-print) ──────────────────────────────── -->
     <div class="sheet-toolbar no-print" v-if="char">
-      <router-link to="/" class="btn btn-ghost btn-sm">← Vault</router-link>
+      <router-link :to="auth.isGM ? '/gm' : '/'" class="btn btn-ghost btn-sm">
+        {{ auth.isGM ? '← GM Dashboard' : '← Vault' }}
+      </router-link>
       <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center">
+        <span v-if="isGmView" class="gm-edit-badge">GM Edit</span>
         <span class="char-title">{{ char.name || 'Unnamed' }}</span>
         <span class="char-sub">{{ char.archetype }}</span>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" @click="share">
+        <button v-if="!isGmView" class="btn btn-ghost btn-sm" @click="share">
           {{ shareCopied ? '✓ Copied' : '🔗 Share' }}
         </button>
         <button class="btn btn-ghost btn-sm" @click="print">🖨 Print</button>
@@ -381,12 +384,19 @@
 import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCharacterStore } from '../stores/character.js'
+import { useAuthStore } from '../stores/auth.js'
 import { SKILL_LIST, traitBonus } from '../character.js'
 import PrintSheet from '../components/PrintSheet.vue'
 
 const route = useRoute()
 const store = useCharacterStore()
+const auth  = useAuthStore()
 const shareCopied = ref(false)
+
+// True when a GM is viewing a character they don't own
+const isGmView = computed(() =>
+  auth.isGM && store.characterOwnerId !== null && store.characterOwnerId !== auth.user?.id
+)
 
 const tab = ref('core')
 const tabs = [
@@ -468,7 +478,13 @@ function removeSkill(i) {
   position: sticky; top: 52px; z-index: 90;
 }
 .char-title { font-family: var(--font-title); font-size: 1rem; color: var(--white); }
-.char-sub { font-size: 0.85rem; color: var(--acc); font-style: italic; }
+.char-sub   { font-size: 0.85rem; color: var(--acc); font-style: italic; }
+.gm-edit-badge {
+  font-size: 0.65rem; font-family: var(--font-title); letter-spacing: 0.08em;
+  color: var(--acc); background: color-mix(in srgb, var(--acc) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
+  border-radius: 20px; padding: 2px 8px; flex-shrink: 0;
+}
 
 /* Two-col layout for core tab */
 .two-col-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px; }
