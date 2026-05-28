@@ -6,9 +6,10 @@ import { useAuthStore } from './auth.js'
 export const useGmStore = defineStore('gm', () => {
   // campaigns: [{ id, name, createdAt, pendingCodes: [], players: [] }]
   // player: { memberId, id, email, displayName, characters: [] }
-  const campaigns = ref([])
-  const loading   = ref(false)
-  const error     = ref(null)
+  const campaigns       = ref([])
+  const playerCampaigns = ref([])   // campaigns this user is an accepted member of
+  const loading         = ref(false)
+  const error           = ref(null)
 
   async function fetchCampaigns() {
     loading.value = true
@@ -147,6 +148,17 @@ export const useGmStore = defineStore('gm', () => {
     }
   }
 
+  // Called by the player to load campaigns they have joined.
+  // The player_read_joined_campaigns RLS policy filters the result automatically.
+  async function fetchPlayerCampaigns() {
+    const { data, error: err } = await supabase
+      .from('campaigns')
+      .select('id, name')
+      .order('name')
+    if (err) throw err
+    playerCampaigns.value = data ?? []
+  }
+
   // Called by the player to accept an invite code.
   // Returns { campaignName, gmEmail } so the UI can confirm what they joined.
   async function acceptInvite(inviteCode) {
@@ -189,8 +201,9 @@ export const useGmStore = defineStore('gm', () => {
   }
 
   return {
-    campaigns, loading, error,
-    fetchCampaigns, createCampaign, renameCampaign, deleteCampaign,
+    campaigns, playerCampaigns, loading, error,
+    fetchCampaigns, fetchPlayerCampaigns,
+    createCampaign, renameCampaign, deleteCampaign,
     generateInviteCode, revokeInvite, removePlayer, acceptInvite
   }
 })

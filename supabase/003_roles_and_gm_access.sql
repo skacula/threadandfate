@@ -116,6 +116,19 @@ CREATE POLICY "player_read_joined_campaigns" ON campaigns FOR SELECT TO authenti
     )
   );
 
+-- ─── Helper: break RLS recursion between campaigns ↔ campaign_members ────────
+-- campaigns.player_read_joined_campaigns queries campaign_members, and
+-- campaign_members.gms_manage_campaign_members queries campaigns — a cycle.
+-- This SECURITY DEFINER function queries campaigns bypassing its RLS policies,
+-- so the chain terminates.
+
+DROP FUNCTION IF EXISTS is_campaign_gm(UUID) CASCADE;
+CREATE OR REPLACE FUNCTION is_campaign_gm(cid UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public AS $$
+  SELECT EXISTS (SELECT 1 FROM campaigns WHERE id = cid AND gm_id = auth.uid());
+$$;
+
 -- ─── RLS: campaign_members ───────────────────────────────────────────────────
 
 ALTER TABLE campaign_members ENABLE ROW LEVEL SECURITY;
@@ -126,9 +139,11 @@ DROP POLICY IF EXISTS "lookup_pending_invites"        ON campaign_members;
 DROP POLICY IF EXISTS "players_accept_invites"        ON campaign_members;
 
 -- GMs manage all member rows for their own campaigns.
+-- Uses is_campaign_gm() (SECURITY DEFINER) to avoid recursion with
+-- campaigns.player_read_joined_campaigns, which also queries campaign_members.
 CREATE POLICY "gms_manage_campaign_members" ON campaign_members FOR ALL TO authenticated
-  USING  (campaign_id IN (SELECT id FROM campaigns WHERE gm_id = auth.uid()))
-  WITH CHECK (campaign_id IN (SELECT id FROM campaigns WHERE gm_id = auth.uid()));
+  USING  (is_campaign_gm(campaign_id))
+  WITH CHECK (is_campaign_gm(campaign_id));
 
 -- Players can view member rows they are accepted into.
 CREATE POLICY "players_view_own_membership" ON campaign_members FOR SELECT TO authenticated
@@ -178,3 +193,12 @@ CREATE POLICY "gm_update_player_characters" ON characters FOR UPDATE TO authenti
       WHERE c.gm_id = auth.uid() AND cm.status = 'accepted'
     )
   );
+
+-- ─── Table-level grants ───────────────────────────────────────────────────────
+-- Tables created via raw SQL don't get auto-grants the way Dashboard tables do.
+-- Without these, authenticated users get "permission denied" even when an RLS
+-- policy would otherwise allow the row.
+
+GRANT SELECT, INSERT, UPDATE ON profiles        TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON campaigns       TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON campaign_members TO authenticated;

@@ -27,13 +27,15 @@ export const useCharacterStore = defineStore('characters', () => {
       const auth = useAuthStore()
       const { data, error: err } = await supabase
         .from('characters')
-        .select('id, name, archetype, world, updated_at')
+        .select('id, name, archetype, world, updated_at, campaign_id, campaigns(name)')
         .eq('user_id', auth.user.id)
         .order('updated_at', { ascending: false })
       if (err) throw err
       list.value = data.map(r => ({
         id: r.id, name: r.name, archetype: r.archetype,
-        world: r.world, updatedAt: r.updated_at
+        world: r.world, updatedAt: r.updated_at,
+        campaignId:   r.campaign_id ?? null,
+        campaignName: r.campaigns?.name ?? null,
       }))
     } catch (e) { error.value = e.message }
     finally { loading.value = false }
@@ -122,6 +124,19 @@ export const useCharacterStore = defineStore('characters', () => {
     return character
   }
 
+  async function assignToCampaign(characterId, campaignId, campaignName) {
+    const { error: err } = await supabase
+      .from('characters')
+      .update({ campaign_id: campaignId || null })
+      .eq('id', characterId)
+    if (err) throw err
+    const item = list.value.find(c => c.id === characterId)
+    if (item) {
+      item.campaignId   = campaignId || null
+      item.campaignName = campaignId ? (campaignName ?? null) : null
+    }
+  }
+
   async function remove(id) {
     await supabase.from('characters').delete().eq('id', id)
     list.value = list.value.filter(c => c.id !== id)
@@ -156,7 +171,7 @@ export const useCharacterStore = defineStore('characters', () => {
 
   return {
     list, current, shareToken, characterOwnerId, loading, error, saved,
-    fetchList, fetchOne, create, save, remove,
+    fetchList, fetchOne, create, save, remove, assignToCampaign,
     generateShareToken, revokeShareToken, newCharacter
   }
 })

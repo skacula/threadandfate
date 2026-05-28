@@ -30,6 +30,28 @@
           <div class="char-name">{{ c.name || 'Unnamed' }}</div>
           <div class="char-arch">{{ c.archetype || '—' }}</div>
           <div class="char-world">{{ c.world || '' }}</div>
+
+          <!-- Campaign assignment row -->
+          <div class="char-campaign" @click.stop>
+            <span class="char-camp-label">Adventure:</span>
+            <select
+              v-if="gm.playerCampaigns.length"
+              class="char-camp-select"
+              :value="c.campaignId ?? ''"
+              @change="assignCampaign(c.id, $event.target.value)"
+              :aria-label="`Assign ${c.name || 'character'} to a campaign`"
+            >
+              <option value="">— None —</option>
+              <option
+                v-for="camp in gm.playerCampaigns"
+                :key="camp.id"
+                :value="camp.id"
+              >{{ camp.name }}</option>
+            </select>
+            <span v-else-if="c.campaignName" class="char-camp-badge">{{ c.campaignName }}</span>
+            <span v-else class="char-camp-none">No active campaigns</span>
+          </div>
+
           <div class="char-footer">
             <span class="char-date">{{ fmt(c.updatedAt) }}</span>
             <button class="btn btn-danger btn-sm" @click.stop="del(c.id)">Delete</button>
@@ -82,13 +104,25 @@ const inviteBusy   = ref(false)
 const inviteError  = ref('')
 const inviteResult = ref(null)  // { campaignName, gmEmail }
 
-onMounted(() => store.fetchList())
+onMounted(async () => {
+  await store.fetchList()
+  if (!auth.isGM) await gm.fetchPlayerCampaigns()
+})
 
 function go(id) { router.push(`/character/${id}`) }
 
 async function del(id) {
   if (!confirm('Delete this character? This cannot be undone.')) return
   await store.remove(id)
+}
+
+async function assignCampaign(characterId, campaignId) {
+  const camp = gm.playerCampaigns.find(c => c.id === campaignId)
+  try {
+    await store.assignToCampaign(characterId, campaignId, camp?.name)
+  } catch (e) {
+    alert(`Could not assign campaign: ${e.message}`)
+  }
 }
 
 async function acceptCode() {
@@ -98,6 +132,8 @@ async function acceptCode() {
   try {
     inviteResult.value = await gm.acceptInvite(inviteInput.value)
     inviteInput.value  = ''
+    // Refresh campaign list so the new campaign appears in selects
+    await gm.fetchPlayerCampaigns()
   } catch (e) {
     inviteError.value = e.message
   } finally {
@@ -163,7 +199,39 @@ function fmt(iso) {
   color: var(--white); letter-spacing: 0.04em; margin-bottom: 4px;
 }
 .char-arch { font-size: 0.9rem; color: var(--acc); margin-bottom: 2px; font-style: italic; }
-.char-world { font-size: 0.8rem; color: var(--muted); margin-bottom: 16px; }
+.char-world { font-size: 0.8rem; color: var(--muted); margin-bottom: 10px; }
+
+/* Campaign row */
+.char-campaign {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 14px;
+}
+.char-camp-label {
+  font-size: 0.72rem; color: var(--faint);
+  text-transform: uppercase; letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+.char-camp-select {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--faint);
+  cursor: pointer;
+  max-width: 100%;
+}
+.char-camp-select:focus { outline: none; border-color: var(--acc); }
+.char-camp-badge {
+  font-size: 0.78rem; color: var(--acc);
+  background: color-mix(in srgb, var(--acc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.char-camp-none { font-size: 0.78rem; color: var(--faint); font-style: italic; }
+
 .char-footer { display: flex; align-items: center; justify-content: space-between; }
 .char-date { font-size: 0.75rem; color: var(--faint); font-family: var(--font-mono); }
 
