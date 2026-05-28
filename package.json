@@ -21,7 +21,6 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@pinia/testing": "^1.0.3",
     "@vitejs/plugin-vue": "^5.2.4",
     "@vue/test-utils": "^2.4.10",
     "concurrently": "^8.2.2",
